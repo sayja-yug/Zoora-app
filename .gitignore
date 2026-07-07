@@ -1,0 +1,36 @@
+# Environment files
+.env
+*.env.local
+
+# Node
+node_modules/
+dist/
+
+# Build outputs
+backend/dist/
+scoring/dist/
+frontend/dist/
+
+# Docker volumes (if committed locally)
+postgres_data/
+minio_data/
+n8n_data/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# n8n execution data (don't commit)
+n8n/.n8n/

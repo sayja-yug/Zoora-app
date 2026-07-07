@@ -1,0 +1,359 @@
+{
+  "name": "Workflow B — Document Intake + Claude Extraction",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "intake/document",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "whb-1-webhook",
+      "name": "Webhook: Document Upload Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "d4f8a3c1-1234-4abc-8def-000000000002"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate incoming document event payload\nconst body = $input.first().json.body ?? $input.first().json;\nconst { document_id, startup_id, doc_type } = body;\n\nconst uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\n\nif (!document_id || !uuidRe.test(document_id)) {\n  return [{ json: { __error: true, status: 400, message: 'Missing or invalid document_id' } }];\n}\nif (!startup_id || !uuidRe.test(startup_id)) {\n  return [{ json: { __error: true, status: 400, message: 'Missing or invalid startup_id' } }];\n}\nif (!doc_type) {\n  return [{ json: { __error: true, status: 400, message: 'Missing doc_type' } }];\n}\n\nreturn [{ json: { document_id, startup_id, doc_type, __error: false } }];"
+      },
+      "id": "whb-2-validate",
+      "name": "Validate Document Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{ "leftValue": "={{ $json.__error }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "id": "whb-3-if-error",
+      "name": "Has Validation Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [640, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: $json.message }) }}",
+        "options": { "responseCode": "={{ $json.status }}" }
+      },
+      "id": "whb-4-respond-error",
+      "name": "Respond: 400 Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZOORA_API_URL }}/api/documents/{{ $json.document_id }}/download-url",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-service-api-key", "value": "={{ $env.SERVICE_API_KEY }}" }] },
+        "options": { "timeout": 15000 }
+      },
+      "id": "whb-5-get-download-url",
+      "name": "Get Pre-signed Download URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [840, 480]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true, \"message\": \"Document queued for processing\", \"document_id\": \"{{ $('Validate Document Event').first().json.document_id }}\" }",
+        "options": { "responseCode": 202 }
+      },
+      "id": "whb-6-respond-accepted",
+      "name": "Respond: 202 Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Get Pre-signed Download URL').first().json.download_url }}",
+        "options": {
+          "timeout": 60000,
+          "response": { "response": { "responseFormat": "file" } }
+        }
+      },
+      "id": "whb-7-download-file",
+      "name": "Download File from Storage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Parse document text ──────────────────────────────────────────────────\n// Supports PDF (via pdf-parse) and plain text files.\n// For other types, extracts whatever text is available.\nconst pdfParse = require('pdf-parse');\n\nconst fileData = $input.first().binary?.data;\nconst docInfo = $('Validate Document Event').first().json;\n\nif (!fileData) {\n  return [{ json: { __parse_error: true, error_msg: 'No binary data received from storage' } }];\n}\n\nconst buffer = Buffer.from(fileData, 'base64');\nlet parsedText = '';\n\ntry {\n  const parsed = await pdfParse(buffer);\n  parsedText = parsed.text;\n} catch (e) {\n  // Not a PDF — try as UTF-8 text\n  try {\n    parsedText = buffer.toString('utf-8');\n  } catch (e2) {\n    return [{ json: {\n      __parse_error: true,\n      error_msg: `Failed to parse file: ${e.message}`,\n      document_id: docInfo.document_id,\n      startup_id: docInfo.startup_id,\n      doc_type: docInfo.doc_type,\n    } }];\n  }\n}\n\n// Truncate to 80k characters (Claude's safe input limit for a single call)\nconst MAX_CHARS = 80000;\nconst truncated = parsedText.length > MAX_CHARS;\nconst text = parsedText.slice(0, MAX_CHARS);\n\nreturn [{ json: {\n  __parse_error: false,\n  document_id: docInfo.document_id,\n  startup_id:  docInfo.startup_id,\n  doc_type:    docInfo.doc_type,\n  parsed_text: text,\n  was_truncated: truncated,\n  char_count: text.length,\n} }];"
+      },
+      "id": "whb-8-parse-text",
+      "name": "Parse Document Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1240, 480]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{ "leftValue": "={{ $json.__parse_error }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "id": "whb-9-if-parse-error",
+      "name": "Parse Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1440, 480]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.ZOORA_API_URL }}/api/documents/{{ $json.document_id }}/parse-result",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-service-api-key", "value": "={{ $env.SERVICE_API_KEY }}" }] },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ parse_status: 'failed', parse_error: $json.error_msg }) }}",
+        "options": {}
+      },
+      "id": "whb-10-mark-failed",
+      "name": "Mark Document: failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 380]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.ZOORA_API_URL }}/api/documents/{{ $json.document_id }}/parse-result",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-service-api-key", "value": "={{ $env.SERVICE_API_KEY }}" }] },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ parse_status: 'parsed', parsed_text: $json.parsed_text }) }}",
+        "options": {}
+      },
+      "id": "whb-11-mark-parsed",
+      "name": "Mark Document: parsed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 580]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZOORA_API_URL }}/api/metric-values/{{ $('Parse Document Text').first().json.startup_id }}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-service-api-key", "value": "={{ $env.SERVICE_API_KEY }}" }] },
+        "options": { "timeout": 15000 }
+      },
+      "id": "whb-12-fetch-metrics",
+      "name": "Fetch Qualitative Metrics for doc_type",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1840, 580]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Build the Claude API prompt ──────────────────────────────────────────\n// Batches ALL qualitative metrics relevant to this doc_type into ONE call.\nconst parseData = $('Parse Document Text').first().json;\nconst metricsData = $input.first().json;\n\n// All qualitative metrics from the master list\nconst qualMetrics = (metricsData.all_metrics || []).filter(\n  m => m.type === 'qualitative' && m.extraction_prompt\n);\n\nif (qualMetrics.length === 0) {\n  // No qualitative metrics to score — skip Claude call\n  return [{ json: { __skip_claude: true, ...parseData } }];\n}\n\n// Build metric rubric block\nconst metricsBlock = qualMetrics.map((m, i) =>\n  `Metric ${i+1}: ${m.name} (slug: ${m.slug})\nRubric: ${m.extraction_prompt}`\n).join('\\n\\n');\n\n// Prompt hash for audit trail (simplified: first 8 chars of combined slugs)\nconst promptVersion = qualMetrics.map(m => m.slug).sort().join(',').slice(0, 40);\n\nreturn [{ json: {\n  __skip_claude: false,\n  document_id:    parseData.document_id,\n  startup_id:     parseData.startup_id,\n  doc_type:       parseData.doc_type,\n  parsed_text:    parseData.parsed_text,\n  qual_metrics:   qualMetrics,\n  prompt_version: promptVersion,\n  claude_prompt: `You are an expert startup analyst scoring metrics for an investment scorecard.\nYour task is to score specific metrics for a startup based ONLY on the document excerpt provided.\nDo not use external knowledge. If the document does not contain relevant information for a metric, use a score of 0 with model_confidence \"low\" and note this in the rationale.\n\nDocument (${parseData.was_truncated ? 'TRUNCATED TO 80,000 chars' : 'complete'}):\n---\n${parseData.parsed_text}\n---\n\nMetrics to score:\n${metricsBlock}\n\nReturn ONLY valid JSON, no markdown code blocks, no other text:\n{\n  \"<slug>\": {\n    \"score\": <0-10 number>,\n    \"rationale\": \"<one to two sentences citing specific text from the document>\",\n    \"model_confidence\": \"<high|medium|low>\"\n  },\n  ...\n}`,\n} }];"
+      },
+      "id": "whb-13-build-prompt",
+      "name": "Build Claude Extraction Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2040, 580]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{ "leftValue": "={{ $json.__skip_claude }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "id": "whb-14-if-skip",
+      "name": "Skip Claude?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2240, 580]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 4096, messages: [{ role: 'user', content: $json.claude_prompt }] }) }}",
+        "options": {
+          "timeout": 120000,
+          "retry": {
+            "enabled": true,
+            "maxRetries": 3,
+            "waitBetweenRetries": 5000
+          },
+          "response": { "response": { "neverError": true } }
+        }
+      },
+      "id": "whb-15-claude-call",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2440, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Parse Claude response and validate JSON ──────────────────────────────\nconst claudeResponse = $input.first().json;\nconst buildData = $('Build Claude Extraction Prompt').first().json;\n\n// Handle rate limit (429) or server errors\nif (claudeResponse.error) {\n  const errType = claudeResponse.error?.type || 'unknown';\n  const errMsg  = claudeResponse.error?.message || JSON.stringify(claudeResponse.error);\n  return [{ json: {\n    __claude_error: true,\n    error_msg: `Claude API error (${errType}): ${errMsg}`,\n    document_id: buildData.document_id,\n    startup_id: buildData.startup_id,\n  } }];\n}\n\nconst rawText = claudeResponse.content?.[0]?.text ?? '';\nlet parsed;\ntry {\n  // Strip any accidental markdown code fences\n  const cleaned = rawText.replace(/^```json\\s*/m, '').replace(/^```\\s*/m, '').replace(/```$/m, '').trim();\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  return [{ json: {\n    __claude_error: true,\n    error_msg: `Failed to parse Claude JSON response: ${e.message}. Raw: ${rawText.slice(0, 500)}`,\n    document_id: buildData.document_id,\n    startup_id: buildData.startup_id,\n  } }];\n}\n\n// Build upsert payloads for each scored metric\nconst qualMetrics = buildData.qual_metrics;\nconst upsertPayloads = [];\n\nfor (const metric of qualMetrics) {\n  const scored = parsed[metric.slug];\n  if (!scored) continue;\n\n  const score = typeof scored.score === 'number'\n    ? Math.min(Math.max(scored.score, 0), 10)\n    : 0;\n\n  upsertPayloads.push({\n    startup_id:         buildData.startup_id,\n    metric_id:          metric.id,\n    value:              String(score),\n    score:              score,\n    confidence_tag:     'llm_inferred',\n    source_document_id: buildData.document_id,\n    llm_rationale:      scored.rationale ?? '',\n    model_confidence:   ['high','medium','low'].includes(scored.model_confidence)\n                          ? scored.model_confidence : 'low',\n    llm_prompt_version: buildData.prompt_version,\n  });\n}\n\nreturn [{ json: {\n  __claude_error: false,\n  startup_id: buildData.startup_id,\n  document_id: buildData.document_id,\n  upsert_payloads: upsertPayloads,\n  scored_count: upsertPayloads.length,\n} }];"
+      },
+      "id": "whb-16-parse-claude",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2640, 480]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{ "leftValue": "={{ $json.__claude_error }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "id": "whb-17-if-claude-error",
+      "name": "Claude Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2840, 480]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.ZOORA_API_URL }}/api/documents/{{ $json.document_id }}/parse-result",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-service-api-key", "value": "={{ $env.SERVICE_API_KEY }}" }] },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ parse_status: 'failed', parse_error: $json.error_msg }) }}",
+        "options": {}
+      },
+      "id": "whb-18-mark-claude-failed",
+      "name": "Mark Document: Claude failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3040, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Upsert all scored metric_values ──────────────────────────────────────\nconst parseData = $input.first().json;\nconst payloads = parseData.upsert_payloads;\nconst ZOORA_API_URL = $env.ZOORA_API_URL;\nconst SERVICE_KEY = $env.SERVICE_API_KEY;\n\nconst results = [];\nconst errors = [];\n\nfor (const payload of payloads) {\n  try {\n    const resp = await $helpers.httpRequest({\n      method: 'POST',\n      url: `${ZOORA_API_URL}/api/metric-values/upsert`,\n      headers: { 'x-service-api-key': SERVICE_KEY, 'content-type': 'application/json' },\n      body: JSON.stringify(payload),\n    });\n    results.push(JSON.parse(resp));\n  } catch (e) {\n    errors.push({ metric_id: payload.metric_id, error: e.message });\n  }\n}\n\nreturn [{ json: {\n  startup_id: parseData.startup_id,\n  upserted: results.length,\n  errors: errors,\n  document_id: parseData.document_id,\n} }];"
+      },
+      "id": "whb-19-upsert-all",
+      "name": "Upsert All Scored Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3040, 560]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $env.WORKFLOW_C_ID }}",
+        "source": "parameter",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "startup_id":   "={{ $json.startup_id }}",
+            "triggered_by": "workflow_b"
+          }
+        }
+      },
+      "id": "whb-20-trigger-c",
+      "name": "Trigger Workflow C (Aggregator)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [3240, 560]
+    }
+  ],
+  "connections": {
+    "Webhook: Document Upload Event": {
+      "main": [[{ "node": "Validate Document Event", "type": "main", "index": 0 }]]
+    },
+    "Validate Document Event": {
+      "main": [[{ "node": "Has Validation Error?", "type": "main", "index": 0 }]]
+    },
+    "Has Validation Error?": {
+      "main": [
+        [{ "node": "Respond: 400 Error", "type": "main", "index": 0 }],
+        [{ "node": "Get Pre-signed Download URL", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Pre-signed Download URL": {
+      "main": [
+        [{ "node": "Respond: 202 Accepted", "type": "main", "index": 0 }],
+        [{ "node": "Download File from Storage", "type": "main", "index": 0 }]
+      ]
+    },
+    "Download File from Storage": {
+      "main": [[{ "node": "Parse Document Text", "type": "main", "index": 0 }]]
+    },
+    "Parse Document Text": {
+      "main": [[{ "node": "Parse Failed?", "type": "main", "index": 0 }]]
+    },
+    "Parse Failed?": {
+      "main": [
+        [{ "node": "Mark Document: failed", "type": "main", "index": 0 }],
+        [{ "node": "Mark Document: parsed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Mark Document: parsed": {
+      "main": [[{ "node": "Fetch Qualitative Metrics for doc_type", "type": "main", "index": 0 }]]
+    },
+    "Fetch Qualitative Metrics for doc_type": {
+      "main": [[{ "node": "Build Claude Extraction Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Claude Extraction Prompt": {
+      "main": [[{ "node": "Skip Claude?", "type": "main", "index": 0 }]]
+    },
+    "Skip Claude?": {
+      "main": [
+        [],
+        [{ "node": "Call Claude API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call Claude API": {
+      "main": [[{ "node": "Parse Claude Response", "type": "main", "index": 0 }]]
+    },
+    "Parse Claude Response": {
+      "main": [[{ "node": "Claude Failed?", "type": "main", "index": 0 }]]
+    },
+    "Claude Failed?": {
+      "main": [
+        [{ "node": "Mark Document: Claude failed", "type": "main", "index": 0 }],
+        [{ "node": "Upsert All Scored Metrics", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert All Scored Metrics": {
+      "main": [[{ "node": "Trigger Workflow C (Aggregator)", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "",
+    "saveManualExecutions": true
+  },
+  "versionId": "wfb-v2-2024",
+  "id": "workflow-b-doc-intake",
+  "tags": [{ "name": "intake" }, { "name": "extraction" }, { "name": "zoora" }]
+}

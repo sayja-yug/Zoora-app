@@ -1,0 +1,72 @@
+{
+  "name": "Workflow C — Scoring Aggregator",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "workflowInputData"
+      },
+      "id": "whc-1-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZOORA_API_URL }}/api/startups/{{ $json.startup_id }}/scoring-data",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-service-api-key", "value": "={{ $env.SERVICE_API_KEY }}" }] },
+        "options": { "timeout": 20000 }
+      },
+      "id": "whc-2-fetch-data",
+      "name": "Fetch Scoring Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Scoring Engine (inlined from scoring/scoring-engine.ts) ──────────────\n// This is a direct copy of the pure function — no imports needed in n8n.\n\nconst CATEGORY_WEIGHTS = { market: 0.28, tech: 0.22, team: 0.15, future: 0.15, certs: 0.10, risk: 0.10 };\n\nfunction round2(n) { return Math.round(n * 100) / 100; }\nfunction clamp(n, min, max) { return Math.min(Math.max(n, min), max); }\n\nfunction computeScores(metricValues, allMetrics) {\n  const categories = Object.keys(CATEGORY_WEIGHTS);\n  const totalPerCat = { tech: 0, certs: 0, market: 0, future: 0, team: 0, risk: 0 };\n  for (const m of allMetrics) { if (m.category in totalPerCat) totalPerCat[m.category]++; }\n\n  const byCat = { tech: [], certs: [], market: [], future: [], team: [], risk: [] };\n  for (const mv of metricValues) { if (mv.category in byCat) byCat[mv.category].push(mv); }\n\n  const catScores = {};\n\n  for (const cat of categories) {\n    const populated = byCat[cat];\n    const total = totalPerCat[cat];\n    if (populated.length === 0) {\n      catScores[cat] = { category: cat, raw_score: 0, weighted_score: 0, populated_metrics: 0, total_metrics: total, confidence_breakdown: { verified_doc: 0, llm_inferred: 0, self_reported: 0 } };\n      continue;\n    }\n    const totalW = populated.reduce((s, mv) => s + Number(mv.weight), 0);\n    const wSum = populated.reduce((s, mv) => s + Number(mv.weight) * Number(mv.score), 0);\n    const wScore = totalW > 0 ? wSum / totalW : 0;\n    const rawScore = populated.reduce((s, mv) => s + Number(mv.score), 0) / populated.length;\n    const confW = { verified_doc: 0, llm_inferred: 0, self_reported: 0 };\n    for (const mv of populated) confW[mv.confidence_tag] = (confW[mv.confidence_tag] || 0) + Number(mv.weight);\n    catScores[cat] = {\n      category: cat,\n      raw_score: round2(rawScore),\n      weighted_score: round2(clamp(wScore, 0, 10)),\n      populated_metrics: populated.length,\n      total_metrics: total,\n      confidence_breakdown: {\n        verified_doc:  totalW > 0 ? round2(confW.verified_doc  / totalW) : 0,\n        llm_inferred:  totalW > 0 ? round2(confW.llm_inferred  / totalW) : 0,\n        self_reported: totalW > 0 ? round2(confW.self_reported / totalW) : 0,\n      },\n    };\n  }\n\n  let totalScore = 0;\n  for (const cat of categories) totalScore += CATEGORY_WEIGHTS[cat] * catScores[cat].weighted_score;\n  const profilePct = allMetrics.length > 0 ? round2((metricValues.length / allMetrics.length) * 100) : 0;\n\n  return { categories: catScores, total_weighted_score: round2(clamp(totalScore, 0, 10)), profile_completeness_pct: clamp(profilePct, 0, 100) };\n}\n\n// ── Run it ────────────────────────────────────────────────────────────────\nconst data = $input.first().json;\nconst startup_id = $('Execute Workflow Trigger').first().json.startup_id;\nconst triggered_by = $('Execute Workflow Trigger').first().json.triggered_by || 'manual';\n\nconst result = computeScores(data.metric_values || [], data.all_metrics || []);\n\n// Build the payload for POST /api/scores\nconst scoresPayload = Object.values(result.categories).map(c => ({\n  startup_id,\n  category:              c.category,\n  raw_score:             c.raw_score,\n  weighted_score:        c.weighted_score,\n  populated_metrics:     c.populated_metrics,\n  total_metrics:         c.total_metrics,\n  confidence_breakdown:  c.confidence_breakdown,\n  triggered_by,\n}));\n\nreturn [{ json: {\n  startup_id,\n  scores:                    scoresPayload,\n  total_weighted_score:      result.total_weighted_score,\n  profile_completeness_pct:  result.profile_completeness_pct,\n} }];"
+      },
+      "id": "whc-3-compute",
+      "name": "Run Scoring Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZOORA_API_URL }}/api/scores",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-service-api-key", "value": "={{ $env.SERVICE_API_KEY }}" }] },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ scores: $json.scores, profile_completeness_pct: $json.profile_completeness_pct }) }}",
+        "options": { "timeout": 20000 }
+      },
+      "id": "whc-4-write-scores",
+      "name": "Write Scores to DB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [840, 400]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{ "node": "Fetch Scoring Data", "type": "main", "index": 0 }]]
+    },
+    "Fetch Scoring Data": {
+      "main": [[{ "node": "Run Scoring Engine", "type": "main", "index": 0 }]]
+    },
+    "Run Scoring Engine": {
+      "main": [[{ "node": "Write Scores to DB", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "wfc-v1-2024",
+  "id": "workflow-c-aggregator",
+  "tags": [{ "name": "scoring" }, { "name": "zoora" }]
+}

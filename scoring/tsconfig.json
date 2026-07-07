@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "removeComments": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["scoring-engine.ts"]
+}

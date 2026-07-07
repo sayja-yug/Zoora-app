@@ -1,0 +1,86 @@
+{
+  "name": "Workflow D — Monthly Re-scoring Cron",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 3 1 * *" }]
+        }
+      },
+      "id": "whd-1-cron",
+      "name": "Cron: First of Month 03:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZOORA_API_URL }}/api/startups",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-service-api-key", "value": "={{ $env.SERVICE_API_KEY }}" }] },
+        "options": { "timeout": 30000 }
+      },
+      "id": "whd-2-fetch-startups",
+      "name": "Fetch All Startups",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Emit one item per startup so the Split In Batches node can iterate\nconst startups = $input.first().json.startups || [];\nreturn startups.map(s => ({ json: { startup_id: s.id, startup_name: s.name } }));"
+      },
+      "id": "whd-3-split",
+      "name": "Split Startups",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 400]
+    },
+    {
+      "parameters": { "batchSize": 1, "options": {} },
+      "id": "whd-4-batches",
+      "name": "Process One at a Time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [840, 400]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $env.WORKFLOW_C_ID }}",
+        "source": "parameter",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "startup_id":   "={{ $json.startup_id }}",
+            "triggered_by": "workflow_d_cron"
+          }
+        }
+      },
+      "id": "whd-5-trigger-c",
+      "name": "Trigger Workflow C for Startup",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1040, 400]
+    }
+  ],
+  "connections": {
+    "Cron: First of Month 03:00": {
+      "main": [[{ "node": "Fetch All Startups", "type": "main", "index": 0 }]]
+    },
+    "Fetch All Startups": {
+      "main": [[{ "node": "Split Startups", "type": "main", "index": 0 }]]
+    },
+    "Split Startups": {
+      "main": [[{ "node": "Process One at a Time", "type": "main", "index": 0 }]]
+    },
+    "Process One at a Time": {
+      "main": [[{ "node": "Trigger Workflow C for Startup", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "versionId": "wfd-v1-2024",
+  "id": "workflow-d-cron",
+  "tags": [{ "name": "cron" }, { "name": "scoring" }, { "name": "zoora" }]
+}

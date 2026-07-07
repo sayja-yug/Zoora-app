@@ -1,0 +1,17 @@
+{
+  "name": "zoora-scoring",
+  "version": "1.0.0",
+  "description": "Standalone scoring engine for Zoora founder scorecard",
+  "main": "dist/scoring-engine.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

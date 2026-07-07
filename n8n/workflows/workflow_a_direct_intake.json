@@ -1,0 +1,197 @@
+{
+  "name": "Workflow A — Direct Field Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "intake/metric",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wha-1-webhook",
+      "name": "Webhook: Receive Metric",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "d4f8a3c1-1234-4abc-8def-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Validate payload ────────────────────────────────────────────────────\nconst body = $input.first().json.body ?? $input.first().json;\n\nconst { startup_id, metric_id, value } = body;\n\n// Required field checks\nif (!startup_id) {\n  return [{ json: { __error: true, status: 400, message: 'Missing required field: startup_id' } }];\n}\nif (!metric_id) {\n  return [{ json: { __error: true, status: 400, message: 'Missing required field: metric_id' } }];\n}\nif (value === undefined || value === null || value === '') {\n  return [{ json: { __error: true, status: 400, message: 'Missing required field: value' } }];\n}\n\n// UUID format check\nconst uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!uuidRe.test(startup_id)) {\n  return [{ json: { __error: true, status: 400, message: 'startup_id must be a valid UUID' } }];\n}\nif (!uuidRe.test(metric_id)) {\n  return [{ json: { __error: true, status: 400, message: 'metric_id must be a valid UUID' } }];\n}\n\nreturn [{ json: { startup_id, metric_id, value: String(value), __error: false } }];"
+      },
+      "id": "wha-2-validate",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [{ "leftValue": "={{ $json.__error }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "id": "wha-3-if-error",
+      "name": "Has Validation Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: $json.message }) }}",
+        "options": { "responseCode": "={{ $json.status }}" }
+      },
+      "id": "wha-4-respond-error",
+      "name": "Respond: 400 Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.ZOORA_API_URL }}/api/metric-values/validate/{{ $json.metric_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-service-api-key", "value": "={{ $env.SERVICE_API_KEY }}" }] },
+        "options": { "timeout": 10000, "response": { "response": { "neverError": true } } }
+      },
+      "id": "wha-5-fetch-metric",
+      "name": "Fetch Metric Config",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [840, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Validate value against metric config ─────────────────────────────────\nconst payload = $('Validate Payload').first().json;\nconst metricResponse = $input.first().json;\n\nif ($input.first().json.error || !metricResponse.metric) {\n  return [{ json: { __error: true, status: 400, message: `Metric ${payload.metric_id} not found` } }];\n}\n\nconst metric = metricResponse.metric;\nconst value = payload.value;\n\n// Type-specific validation\nif (metric.type === 'numeric') {\n  const num = parseFloat(value);\n  if (isNaN(num)) {\n    return [{ json: { __error: true, status: 400, message: `Metric '${metric.name}' requires a numeric value, got: ${value}` } }];\n  }\n  if (metric.valid_min !== null && num < metric.valid_min) {\n    return [{ json: { __error: true, status: 400, message: `Value ${num} is below minimum ${metric.valid_min} for metric '${metric.name}'` } }];\n  }\n  if (metric.valid_max !== null && num > metric.valid_max) {\n    return [{ json: { __error: true, status: 400, message: `Value ${num} exceeds maximum ${metric.valid_max} for metric '${metric.name}'` } }];\n  }\n}\n\n// Compute score (normalize value to 0-10)\n// For numeric: linear interpolation between valid_min and valid_max → 0-10\n// For document/qualitative: score comes from the caller (defaulting to 5 pending LLM)\nlet score = 5; // default for document/qualitative\n\nif (metric.type === 'numeric') {\n  const num = parseFloat(value);\n  if (metric.valid_min !== null && metric.valid_max !== null && metric.valid_max > metric.valid_min) {\n    score = Math.round(((num - metric.valid_min) / (metric.valid_max - metric.valid_min)) * 10 * 100) / 100;\n    score = Math.min(Math.max(score, 0), 10);\n  } else {\n    // No defined range: score provided by caller or default to 5\n    score = typeof payload.score === 'number' ? payload.score : 5;\n  }\n}\n\nif (typeof payload.score === 'number') {\n  // Caller explicitly provided a score — trust it (e.g. for qualitative self-assessment)\n  score = Math.min(Math.max(payload.score, 0), 10);\n}\n\nreturn [{ json: {\n  startup_id: payload.startup_id,\n  metric_id:  payload.metric_id,\n  value:      value,\n  score:      score,\n  confidence_tag: 'self_reported',\n  __error: false,\n  metric_name: metric.name,\n} }];"
+      },
+      "id": "wha-6-compute-score",
+      "name": "Validate & Compute Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 380]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{ "leftValue": "={{ $json.__error }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }],
+          "combinator": "and"
+        }
+      },
+      "id": "wha-7-if-metric-error",
+      "name": "Has Metric Error?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1240, 380]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: $json.message }) }}",
+        "options": { "responseCode": "={{ $json.status }}" }
+      },
+      "id": "wha-8-respond-metric-error",
+      "name": "Respond: 400 Metric Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.ZOORA_API_URL }}/api/metric-values/upsert",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "x-service-api-key", "value": "={{ $env.SERVICE_API_KEY }}" }] },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "startup_id",    "value": "={{ $json.startup_id }}" },
+            { "name": "metric_id",     "value": "={{ $json.metric_id }}" },
+            { "name": "value",         "value": "={{ $json.value }}" },
+            { "name": "score",         "value": "={{ $json.score }}" },
+            { "name": "confidence_tag","value": "self_reported" }
+          ]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "wha-9-upsert",
+      "name": "Upsert metric_value",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, 460]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $env.WORKFLOW_C_ID }}",
+        "source": "parameter",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "startup_id": "={{ $('Validate & Compute Score').first().json.startup_id }}",
+            "triggered_by": "workflow_a"
+          }
+        }
+      },
+      "id": "wha-10-trigger-c",
+      "name": "Trigger Workflow C (Aggregator)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1640, 460]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, metric_value: $('Upsert metric_value').first().json.metric_value, message: `Score updated for metric: ${$('Validate & Compute Score').first().json.metric_name}` }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "wha-11-respond-success",
+      "name": "Respond: 200 Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1840, 460]
+    }
+  ],
+  "connections": {
+    "Webhook: Receive Metric": {
+      "main": [[{ "node": "Validate Payload", "type": "main", "index": 0 }]]
+    },
+    "Validate Payload": {
+      "main": [[{ "node": "Has Validation Error?", "type": "main", "index": 0 }]]
+    },
+    "Has Validation Error?": {
+      "main": [
+        [{ "node": "Respond: 400 Error", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Metric Config", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Metric Config": {
+      "main": [[{ "node": "Validate & Compute Score", "type": "main", "index": 0 }]]
+    },
+    "Validate & Compute Score": {
+      "main": [[{ "node": "Has Metric Error?", "type": "main", "index": 0 }]]
+    },
+    "Has Metric Error?": {
+      "main": [
+        [{ "node": "Respond: 400 Metric Error", "type": "main", "index": 0 }],
+        [{ "node": "Upsert metric_value", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert metric_value": {
+      "main": [[{ "node": "Trigger Workflow C (Aggregator)", "type": "main", "index": 0 }]]
+    },
+    "Trigger Workflow C (Aggregator)": {
+      "main": [[{ "node": "Respond: 200 Success", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "errorWorkflow": "" },
+  "versionId": "wfa-v1-2024",
+  "id": "workflow-a-direct-intake",
+  "tags": [{ "name": "intake" }, { "name": "zoora" }]
+}
