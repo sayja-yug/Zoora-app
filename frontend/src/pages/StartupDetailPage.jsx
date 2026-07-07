@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getStartupDetail } from '../api/client';
+import { getStartupDetail, getDocuments } from '../api/client';
 import {
   CATEGORY_META, CATEGORY_ORDER, scoreClass, formatScore, daysSince,
 } from '../utils';
@@ -8,6 +8,15 @@ import { ConfidenceBar } from '../components/ConfidenceBar';
 import { ScoreHistoryChart } from '../components/ScoreHistoryChart';
 
 const STALENESS_DAYS = 90;
+
+const DOC_TYPE_LABELS = {
+  pitch_deck: 'Pitch Deck',
+  financial_audit: 'Financial Audit',
+  loi: 'Letter of Intent (LOI)',
+  soc2_report: 'SOC2 Report',
+  patent: 'Patent',
+  other: 'Other Document'
+};
 
 function CategoryCard({ score }) {
   const meta = CATEGORY_META[score.category];
@@ -63,17 +72,39 @@ export function StartupDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const user = (() => {
+    try { return JSON.parse(localStorage.getItem('zoora_user') || '{}'); } catch { return {}; }
+  })();
+
+  const isOwner = user.role === 'founder' && user.startupId === id;
+  const isInvestorOrAdmin = user.role === 'investor' || user.role === 'admin';
+  const showDocsSection = isOwner || isInvestorOrAdmin;
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    getStartupDetail(id)
-      .then(res => setData(res.data))
+    
+    const fetches = [getStartupDetail(id)];
+    if (showDocsSection) {
+      fetches.push(getDocuments(id));
+    }
+    
+    Promise.all(fetches)
+      .then(([detailRes, docsRes]) => {
+        setData(detailRes.data);
+        if (docsRes) {
+          setDocuments(docsRes.data.documents || []);
+        } else {
+          setDocuments([]);
+        }
+      })
       .catch(() => setError('Failed to load startup details.'))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, showDocsSection]);
 
   if (loading) {
     return (
@@ -195,6 +226,74 @@ export function StartupDetailPage() {
           </div>
         );
       })()}
+
+      {/* Verified documents section */}
+      {showDocsSection && (
+        <>
+          <h2 className="section-heading">Data Vault Documents</h2>
+          <div className="card card-glass animate-in" style={{ padding: '24px', marginBottom: 32 }}>
+            {documents.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-tertiary)' }}>
+                No documents uploaded to the verification vault yet.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--text-tertiary)', height: 36 }}>
+                      <th style={{ padding: '8px 12px' }}>Filename</th>
+                      <th style={{ padding: '8px 12px' }}>Category Type</th>
+                      <th style={{ padding: '8px 12px' }}>Uploaded</th>
+                      <th style={{ padding: '8px 12px' }}>Verification Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {documents.map((doc) => {
+                      const vColor = 
+                        doc.verification_status === 'verified' ? 'var(--color-emerald)' : 
+                        doc.verification_status === 'rejected' ? 'var(--color-rose)' : 'var(--color-amber)';
+                      
+                      const vLabel = 
+                        doc.verification_status === 'verified' ? '✓ Verified' : 
+                        doc.verification_status === 'rejected' ? '✗ Rejected' : '● Pending';
+
+                      const vClass = 
+                        doc.verification_status === 'verified' ? 'fresh' : 
+                        doc.verification_status === 'rejected' ? 'stale' : 'pending';
+
+                      return (
+                        <tr key={doc.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                          <td style={{ padding: '14px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            📄 {doc.filename || doc.file_url.split('/').pop()}
+                          </td>
+                          <td style={{ padding: '14px 12px', color: 'var(--text-secondary)' }}>
+                            {DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type}
+                          </td>
+                          <td style={{ padding: '14px 12px', color: 'var(--text-tertiary)' }}>
+                            {new Date(doc.uploaded_at).toLocaleDateString()}
+                          </td>
+                          <td style={{ padding: '14px 12px' }}>
+                            <span className={`staleness-flag ${vClass}`} style={{ 
+                              fontSize: 11, 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: 6,
+                              padding: '3px 8px'
+                            }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: vColor, display: 'inline-block' }} />
+                              {vLabel}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Score history chart */}
       <h2 className="section-heading">Score History</h2>
