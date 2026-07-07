@@ -45,7 +45,7 @@ class Startup(models.Model):
 
     class Meta:
         db_table = 'startups'
-        managed = False
+        managed = True
 
 class User(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -58,7 +58,7 @@ class User(models.Model):
 
     class Meta:
         db_table = 'users'
-        managed = False
+        managed = True
 
 class Metric(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -76,7 +76,7 @@ class Metric(models.Model):
 
     class Meta:
         db_table = 'metrics'
-        managed = False
+        managed = True
 
 class Document(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -92,7 +92,7 @@ class Document(models.Model):
 
     class Meta:
         db_table = 'documents'
-        managed = False
+        managed = True
 
 class MetricValue(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -110,7 +110,7 @@ class MetricValue(models.Model):
 
     class Meta:
         db_table = 'metric_values'
-        managed = False
+        managed = True
         unique_together = (('startup', 'metric'),)
 
 class Score(models.Model):
@@ -126,7 +126,7 @@ class Score(models.Model):
 
     class Meta:
         db_table = 'scores'
-        managed = False
+        managed = True
         unique_together = (('startup', 'category'),)
 
 class ScoreHistory(models.Model):
@@ -143,4 +143,4 @@ class ScoreHistory(models.Model):
 
     class Meta:
         db_table = 'score_history'
-        managed = False
+        managed = True
