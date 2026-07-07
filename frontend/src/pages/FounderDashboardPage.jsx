@@ -240,6 +240,7 @@ export function FounderDashboardPage() {
                     <th style={{ padding: '8px 12px' }}>Category Type</th>
                     <th style={{ padding: '8px 12px' }}>Uploaded</th>
                     <th style={{ padding: '8px 12px' }}>AI Status</th>
+                    <th style={{ padding: '8px 12px' }}>Verification</th>
                     <th style={{ padding: '8px 12px', textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
@@ -256,6 +257,18 @@ export function FounderDashboardPage() {
                     const dotColor = 
                       doc.parse_status === 'parsed' ? 'var(--color-emerald)' : 
                       doc.parse_status === 'failed' ? 'var(--color-rose)' : 'var(--color-amber)';
+
+                    const vColor = 
+                      doc.verification_status === 'verified' ? 'var(--color-emerald)' : 
+                      doc.verification_status === 'rejected' ? 'var(--color-rose)' : 'var(--color-amber)';
+                    
+                    const vLabel = 
+                      doc.verification_status === 'verified' ? '✓ Verified' : 
+                      doc.verification_status === 'rejected' ? '✗ Rejected' : '● Pending';
+
+                    const vClass = 
+                      doc.verification_status === 'verified' ? 'fresh' : 
+                      doc.verification_status === 'rejected' ? 'stale' : 'pending';
 
                     return (
                       <tr key={doc.id} className="table-row-hover" style={{ 
@@ -281,6 +294,18 @@ export function FounderDashboardPage() {
                           }}>
                             <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, display: 'inline-block' }} />
                             {statusLabel}
+                          </span>
+                        </td>
+                        <td style={{ padding: '14px 12px' }}>
+                          <span className={`staleness-flag ${vClass}`} style={{ 
+                            fontSize: 11, 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            gap: 6,
+                            padding: '3px 8px'
+                          }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: vColor, display: 'inline-block' }} />
+                            {vLabel}
                           </span>
                         </td>
                         <td style={{ padding: '14px 12px', textAlign: 'right' }}>

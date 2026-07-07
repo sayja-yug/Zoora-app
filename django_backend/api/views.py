@@ -132,6 +132,7 @@ class DocumentView(APIView):
                 'doc_type': d.doc_type,
                 'uploaded_at': d.uploaded_at.isoformat(),
                 'parse_status': d.parse_status,
+                'verification_status': d.verification_status,
                 'filename': d.file_url.split('/')[-1] if '/' in d.file_url else d.file_url
             })
         return Response({'documents': data})

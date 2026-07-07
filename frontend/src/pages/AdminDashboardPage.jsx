@@ -230,34 +230,38 @@ export function AdminDashboardPage() {
                           </span>
                         </td>
                         <td style={{ padding: '14px 12px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                            <button
-                              className="btn btn-primary"
-                              style={{ 
-                                padding: '4px 8px', 
-                                fontSize: 11, 
-                                borderRadius: 6,
-                                background: 'var(--color-emerald)',
-                                color: '#fff'
-                              }}
-                              disabled={verifyingId === doc.id}
-                              onClick={() => handleVerify(doc.id, 'verify')}
-                            >
-                              Verify
-                            </button>
-                            <button
-                              className="btn btn-danger"
-                              style={{ 
-                                padding: '4px 8px', 
-                                fontSize: 11, 
-                                borderRadius: 6,
-                              }}
-                              disabled={verifyingId === doc.id}
-                              onClick={() => handleVerify(doc.id, 'reject')}
-                            >
-                              Reject
-                            </button>
-                          </div>
+                          {doc.verification_status === 'pending' ? (
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                              <button
+                                className="btn btn-primary"
+                                style={{ 
+                                  padding: '4px 8px', 
+                                  fontSize: 11, 
+                                  borderRadius: 6,
+                                  background: 'var(--color-emerald)',
+                                  color: '#fff'
+                                }}
+                                disabled={verifyingId === doc.id}
+                                onClick={() => handleVerify(doc.id, 'verify')}
+                              >
+                                Verify
+                              </button>
+                              <button
+                                className="btn btn-danger"
+                                style={{ 
+                                  padding: '4px 8px', 
+                                  fontSize: 11, 
+                                  borderRadius: 6,
+                                }}
+                                disabled={verifyingId === doc.id}
+                                onClick={() => handleVerify(doc.id, 'reject')}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: 11, color: 'var(--text-tertiary)', paddingRight: 8 }}>—</span>
+                          )}
                         </td>
                       </tr>
                     );
