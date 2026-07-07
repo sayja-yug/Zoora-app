@@ -1,7 +1,8 @@
 from django.urls import path
 from .views import (
-    LoginView, RegisterView, StartupListView, StartupDetailView, 
-    DocumentView, DocumentDeleteView, AdminDocumentListView, AdminDocumentVerifyView
+    LoginView, RegisterView, StartupListView, StartupDetailView,
+    DocumentView, DocumentDeleteView, AdminDocumentListView, AdminDocumentVerifyView,
+    OnboardingQuestionsView, OnboardingSubmitView,
 )
 
 urlpatterns = [
@@ -13,4 +14,6 @@ urlpatterns = [
     path('documents/<uuid:pk>', DocumentDeleteView.as_view(), name='document_delete'),
     path('admin/documents', AdminDocumentListView.as_view(), name='admin_documents'),
     path('admin/documents/<uuid:pk>/verify', AdminDocumentVerifyView.as_view(), name='admin_verify_document'),
+    path('onboarding/questions', OnboardingQuestionsView.as_view(), name='onboarding_questions'),
+    path('onboarding/submit', OnboardingSubmitView.as_view(), name='onboarding_submit'),
 ]

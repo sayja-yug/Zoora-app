@@ -31,7 +31,8 @@ export function RegisterPage() {
 
       localStorage.setItem('zoora_token', token);
       localStorage.setItem('zoora_user', JSON.stringify(user));
-      navigate('/founder');
+      localStorage.setItem('zoora_startup_name', startupName);
+      navigate('/onboarding');
     } catch (err) {
       setError(err.response?.data?.error || 'Registration failed. Please try again.');
     } finally {

@@ -4,6 +4,7 @@ import { LoginPage } from './pages/LoginPage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { StartupDetailPage } from './pages/StartupDetailPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { OnboardingPage } from './pages/OnboardingPage';
 import { FounderDashboardPage } from './pages/FounderDashboardPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import './index.css';
@@ -110,6 +111,7 @@ function AppShell() {
           <Route path="/startup/:id" element={<ProtectedRoute><StartupDetailPage /></ProtectedRoute>}/>
           <Route path="/login" element={<LoginPage />}/>
           <Route path="/register" element={<RegisterPage />}/>
+          <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>}/>
           <Route path="*" element={<Navigate to="/" replace/>}/>
         </Routes>
       </main>

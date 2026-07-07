@@ -72,7 +72,10 @@ export function FounderDashboardPage() {
   };
 
   useEffect(() => {
-    loadData();
+    loadData().then(() => {
+      // Data is loaded in state, but loadData doesn't return it directly to check here easily unless we modify it.
+      // We can check in a separate effect or right after loading data. Let's check below where we have data.
+    });
   }, []);
 
   if (loading) {
@@ -97,6 +100,17 @@ export function FounderDashboardPage() {
   }
 
   const { startup, scores } = data;
+  
+  useEffect(() => {
+    if (startup && startup.onboarding_completed === false) {
+      navigate('/onboarding');
+    }
+  }, [startup, navigate]);
+
+  if (startup && startup.onboarding_completed === false) {
+    return null; // prevent flash of content before redirect
+  }
+
   const pendingDocsCount = documents.filter(d => d.parse_status === 'pending').length;
 
   return (

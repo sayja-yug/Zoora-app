@@ -43,6 +43,8 @@ class Startup(models.Model):
     website = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     profile_completeness_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    onboarding_data = models.JSONField(default=dict, blank=True)
+    onboarding_completed = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'startups'

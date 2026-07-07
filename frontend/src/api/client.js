@@ -67,3 +67,14 @@ export const getAdminDocuments = () =>
 
 export const verifyDocument = (docId, action) =>
   USE_MOCK ? mockApi.verifyDocument(docId, action) : api.post(`/admin/documents/${docId}/verify`, { action });
+
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+export const getOnboardingQuestions = () =>
+  USE_MOCK
+    ? Promise.resolve({ data: { sections: [] } })   // frontend uses built-in data in mock mode
+    : api.get('/onboarding/questions');
+
+export const submitOnboarding = (data) =>
+  USE_MOCK
+    ? Promise.resolve({ data: { success: true, onboarding_completed: true, profile_completeness_pct: 80 } })
+    : api.post('/onboarding/submit', data);
