@@ -60,3 +60,10 @@ export const getDocuments = (startupId) =>
 
 export const deleteDocument = (docId) =>
   USE_MOCK ? mockApi.deleteDocument(docId) : api.delete(`/documents/${docId}`);
+
+// ─── Admin Documents ───────────────────────────────────────────────────────
+export const getAdminDocuments = () =>
+  USE_MOCK ? mockApi.getAdminDocuments() : api.get('/admin/documents');
+
+export const verifyDocument = (docId, action) =>
+  USE_MOCK ? mockApi.verifyDocument(docId, action) : api.post(`/admin/documents/${docId}/verify`, { action });

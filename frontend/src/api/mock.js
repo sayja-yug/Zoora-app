@@ -195,8 +195,14 @@ export const mockApi = {
       throw { response: { data: { error: 'Invalid credentials' } } };
     }
     
+    let role = 'investor';
+    if (email === 'admin@zoora.ai') {
+      role = 'admin';
+    } else {
+      const mockFounder = MOCK_USERS.find(u => u.email === email);
+      if (mockFounder) role = mockFounder.role;
+    }
     const mockFounder = MOCK_USERS.find(u => u.email === email);
-    const role = mockFounder ? mockFounder.role : 'investor';
     const startupId = mockFounder ? mockFounder.startupId : null;
 
     return {
@@ -252,7 +258,8 @@ export const mockApi = {
       doc_type: docType,
       uploaded_at: new Date().toISOString(),
       parse_status: 'pending',
-      filename: filename
+      filename: filename,
+      verification_status: 'pending'
     });
 
     return {
@@ -290,6 +297,28 @@ export const mockApi = {
       MOCK_DOCUMENTS.splice(idx, 1);
     }
     return { data: { success: true } };
+  },
+  getAdminDocuments: async () => {
+    await delay(400);
+    // map startup names
+    const docs = MOCK_DOCUMENTS.map(d => {
+      const startup = MOCK_STARTUPS.find(s => s.id === d.startup_id);
+      return {
+        ...d,
+        startup_name: startup ? startup.name : 'Unknown Startup',
+        uploaded_by_email: 'founder@' + (startup ? startup.name.toLowerCase().replace(/\s+/g, '') : 'startup') + '.com',
+        parsed_text: d.doc_type === 'pitch_deck' ? "This is a parsed pitch deck content. It contains information about market growth, technical architecture, and core team." : "Verified certificate text."
+      };
+    });
+    return { data: { documents: docs } };
+  },
+  verifyDocument: async (docId, action) => {
+    await delay(300);
+    const doc = MOCK_DOCUMENTS.find(d => d.id === docId);
+    if (doc) {
+      doc.verification_status = action === 'verify' ? 'verified' : 'rejected';
+    }
+    return { data: { id: docId, verification_status: doc ? doc.verification_status : 'pending' } };
   }
 };
 
@@ -304,7 +333,8 @@ const MOCK_DOCUMENTS = [
     doc_type: 'pitch_deck',
     uploaded_at: '2026-06-10T10:00:00Z',
     parse_status: 'parsed',
-    filename: 'neuralbridge_pitch.pdf'
+    filename: 'neuralbridge_pitch.pdf',
+    verification_status: 'pending'
   },
   {
     id: 'doc-2',
@@ -313,7 +343,8 @@ const MOCK_DOCUMENTS = [
     doc_type: 'financial_audit',
     uploaded_at: '2026-06-15T14:30:00Z',
     parse_status: 'parsed',
-    filename: 'audit_2025.pdf'
+    filename: 'audit_2025.pdf',
+    verification_status: 'pending'
   },
   {
     id: 'doc-3',
@@ -322,7 +353,8 @@ const MOCK_DOCUMENTS = [
     doc_type: 'loi',
     uploaded_at: '2026-06-28T09:15:00Z',
     parse_status: 'pending',
-    filename: 'loi_google.pdf'
+    filename: 'loi_google.pdf',
+    verification_status: 'pending'
   }
 ];
 

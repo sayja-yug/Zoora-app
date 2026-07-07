@@ -21,7 +21,9 @@ export function LoginPage() {
       localStorage.setItem('zoora_token', token);
       localStorage.setItem('zoora_user', JSON.stringify(user));
 
-      if (user.role === 'founder') {
+      if (user.role === 'admin') {
+        navigate('/admin');
+      } else if (user.role === 'founder') {
         navigate('/founder');
       } else {
         navigate('/');
@@ -44,7 +46,7 @@ export function LoginPage() {
         </div>
 
         <h1 className="login-title">Sign In</h1>
-        <p className="login-subtitle">Access your investor or founder dashboard</p>
+        <p className="login-subtitle">Access your investor, founder, or admin dashboard</p>
 
         {/* Demo mode notice */}
         <div style={{
@@ -57,7 +59,7 @@ export function LoginPage() {
           color: 'var(--color-cyan)',
           lineHeight: 1.5,
         }}>
-          <strong>Demo mode</strong> — running with mock data. Use any email &amp; any password (4+ chars) to log in as an investor.
+          <strong>Demo mode</strong> — running with mock data. Use any email &amp; any password (4+ chars) to log in as an investor, or use <code>admin@zoora.ai</code> / <code>admin</code> to log in as admin.
         </div>
 
         <form onSubmit={handleSubmit}>

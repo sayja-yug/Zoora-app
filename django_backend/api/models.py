@@ -5,6 +5,7 @@ class UserRole(models.TextChoices):
     FOUNDER = 'founder', 'Founder'
     INVESTOR = 'investor', 'Investor'
     SERVICE = 'service', 'Service'
+    ADMIN = 'admin', 'Admin'
 
 class MetricCategory(models.TextChoices):
     TECH = 'tech', 'Technology & R&D'
@@ -89,6 +90,11 @@ class Document(models.Model):
     parse_status = models.CharField(max_length=20, choices=ParseStatus.choices, default=ParseStatus.PENDING)
     parse_error = models.TextField(null=True, blank=True)
     parsed_at = models.DateTimeField(null=True, blank=True)
+    verification_status = models.CharField(
+        max_length=20,
+        default='pending',
+        choices=[('pending', 'Pending'), ('verified', 'Verified'), ('rejected', 'Rejected')]
+    )
 
     class Meta:
         db_table = 'documents'

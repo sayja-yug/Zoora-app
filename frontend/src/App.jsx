@@ -5,6 +5,7 @@ import { LeaderboardPage } from './pages/LeaderboardPage';
 import { StartupDetailPage } from './pages/StartupDetailPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { FounderDashboardPage } from './pages/FounderDashboardPage';
+import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import './index.css';
 function isAuthenticated() {
     const token = localStorage.getItem('zoora_token');
@@ -42,15 +43,33 @@ function Navbar() {
     }
   return (
     <nav className="navbar">
-      <div className="navbar-brand" onClick={() => navigate(user.role === 'founder' ? '/founder' : '/')} style={{ cursor: 'pointer' }}>
+      <div className="navbar-brand" onClick={() => navigate(user.role === 'admin' ? '/admin' : user.role === 'founder' ? '/founder' : '/')} style={{ cursor: 'pointer' }}>
         <div className="navbar-brand-dot"/>
         <span><span style={{ color: 'var(--color-cyan)' }}>Z</span>oora</span>
         <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>
-          {user.role === 'founder' ? 'Founder Portal' : 'Investor Portal'}
+          {user.role === 'admin' ? 'Admin Portal' : user.role === 'founder' ? 'Founder Portal' : 'Investor Portal'}
         </span>
       </div>
 
       <div className="navbar-actions">
+        {user.role === 'admin' && (
+          <>
+            <button 
+              className="btn btn-ghost" 
+              onClick={() => navigate('/admin')} 
+              style={{ fontSize: 12, marginRight: 8 }}
+            >
+              Admin Vault
+            </button>
+            <button 
+              className="btn btn-ghost" 
+              onClick={() => navigate('/')} 
+              style={{ fontSize: 12, marginRight: 16, color: 'var(--color-cyan)' }}
+            >
+              Leaderboard
+            </button>
+          </>
+        )}
         {user.role === 'founder' && (
           <>
             <button 
@@ -87,6 +106,7 @@ function AppShell() {
         <Routes>
           <Route path="/" element={<ProtectedRoute><LeaderboardPage /></ProtectedRoute>}/>
           <Route path="/founder" element={<ProtectedRoute><FounderDashboardPage /></ProtectedRoute>}/>
+          <Route path="/admin" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>}/>
           <Route path="/startup/:id" element={<ProtectedRoute><StartupDetailPage /></ProtectedRoute>}/>
           <Route path="/login" element={<LoginPage />}/>
           <Route path="/register" element={<RegisterPage />}/>

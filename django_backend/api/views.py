@@ -168,3 +168,42 @@ class DocumentDeleteView(APIView):
             return Response({'success': True})
         except Document.DoesNotExist:
             return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class AdminDocumentListView(APIView):
+    def get(self, request):
+        docs = Document.objects.all().select_related('startup', 'uploaded_by')
+        data = []
+        for d in docs:
+            data.append({
+                'id': str(d.id),
+                'startup_id': str(d.startup_id),
+                'startup_name': d.startup.name if d.startup else "Unknown",
+                'file_url': d.file_url,
+                'doc_type': d.doc_type,
+                'uploaded_at': d.uploaded_at.isoformat(),
+                'uploaded_by_email': d.uploaded_by.email if d.uploaded_by else "System",
+                'parse_status': d.parse_status,
+                'verification_status': d.verification_status,
+                'filename': d.file_url.split('/')[-1] if '/' in d.file_url else d.file_url,
+                'parsed_text': d.parsed_text
+            })
+        return Response({'documents': data})
+
+class AdminDocumentVerifyView(APIView):
+    def post(self, request, pk):
+        try:
+            doc = Document.objects.get(pk=pk)
+            action = request.data.get('action') # 'verify' or 'reject'
+            if action == 'verify':
+                doc.verification_status = 'verified'
+            elif action == 'reject':
+                doc.verification_status = 'rejected'
+            else:
+                return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+            doc.save()
+            return Response({
+                'id': str(doc.id),
+                'verification_status': doc.verification_status
+            })
+        except Document.DoesNotExist:
+            return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)

@@ -165,6 +165,15 @@ def seed_demo_data():
         }
     )
     
+    # 4. Demo Admin User
+    User.objects.get_or_create(
+        email="admin@zoora.ai",
+        defaults={
+            "password_hash": "admin",
+            "role": UserRole.ADMIN
+        }
+    )
+    
     print("Demo data seeded successfully.")
 
 if __name__ == '__main__':
